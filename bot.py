@@ -181,10 +181,10 @@ def generate_message(config: Config) -> str:
     now = datetime.now(config.timezone)
     last_response: dict[str, Any] | None = None
 
-    if random.random() < config.heart_only_chance:
+    if can_use_local_message(now) and random.random() < config.heart_only_chance:
         return random.choice((random.choice(HEARTS), random.choice(HEARTS) * 2))
 
-    if random.random() < config.local_message_chance:
+    if can_use_local_message(now) and random.random() < config.local_message_chance:
         return build_local_message(config)
 
     for attempt in range(1, OPENROUTER_ATTEMPTS + 1):
@@ -225,6 +225,10 @@ def generate_message(config: Config) -> str:
         time.sleep(2)
 
     raise BotError(f"OpenRouter returned unusable content after retries: {last_response}")
+
+
+def can_use_local_message(now: datetime) -> bool:
+    return now.hour not in (8, 22)
 
 
 def build_local_message(config: Config) -> str:
