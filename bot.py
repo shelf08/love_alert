@@ -214,7 +214,8 @@ def next_send_time(now: datetime, config: Config) -> datetime:
 def create_and_send(config: Config) -> None:
     text = generate_message(config)
     send_telegram_message(config, text)
-    print(f"[{datetime.now(config.timezone).isoformat(timespec='seconds')}] sent: {text}", flush=True)
+    sent_at = datetime.now(config.timezone).isoformat(timespec="seconds")
+    print(f"[{sent_at}] sent message ({len(text)} chars)", flush=True)
 
 
 def run() -> None:
