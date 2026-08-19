@@ -23,6 +23,7 @@ INVALID_MESSAGE_PREFIXES = (
     "safe",
     "unsafe",
 )
+LATIN_LETTERS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 HEARTS = ("❤️", "💕", "💖", "💗", "💘", "💞")
 DEFAULT_RECIPIENT_NAMES = ("Даша", "Дашуля", "Дарья", "Данечка")
 LOCAL_SHORT_MESSAGES = (
@@ -174,18 +175,21 @@ def is_invalid_generated_message(text: str) -> bool:
     if not normalized:
         return True
 
-    return any(normalized.startswith(prefix) for prefix in INVALID_MESSAGE_PREFIXES)
+    has_invalid_prefix = any(normalized.startswith(prefix) for prefix in INVALID_MESSAGE_PREFIXES)
+    has_latin_letters = any(char in LATIN_LETTERS for char in text)
+    return has_invalid_prefix or has_latin_letters
 
 
 def generate_message(config: Config) -> str:
     now = datetime.now(config.timezone)
+    recipient_name = random.choice(config.recipient_names)
     last_response: dict[str, Any] | None = None
 
     if can_use_local_message(now) and random.random() < config.heart_only_chance:
         return random.choice((random.choice(HEARTS), random.choice(HEARTS) * 2))
 
     if can_use_local_message(now) and random.random() < config.local_message_chance:
-        return build_local_message(config)
+        return build_local_message(config, recipient_name)
 
     for attempt in range(1, OPENROUTER_ATTEMPTS + 1):
         response = post_json(
@@ -201,7 +205,7 @@ def generate_message(config: Config) -> str:
                             "Добавляй сердечки естественно, чтобы сообщение выглядело ласковым."
                         ),
                     },
-                    {"role": "user", "content": build_prompt(now, config)},
+                    {"role": "user", "content": build_prompt(now, config, recipient_name)},
                 ],
                 "temperature": 0.9,
                 "max_tokens": 260,
@@ -231,8 +235,8 @@ def can_use_local_message(now: datetime) -> bool:
     return now.hour not in (8, 22)
 
 
-def build_local_message(config: Config) -> str:
-    name = random.choice(config.recipient_names)
+def build_local_message(config: Config, name: str | None = None) -> str:
+    name = name or random.choice(config.recipient_names)
     heart = random.choice(HEARTS)
     template = random.choice(LOCAL_SHORT_MESSAGES)
     return template.format(name=name, heart=heart)
@@ -284,8 +288,8 @@ def period_topics(hour: int) -> tuple[str, ...]:
     )
 
 
-def build_prompt(now: datetime, config: Config) -> str:
-    names = ", ".join(config.recipient_names)
+def build_prompt(now: datetime, config: Config, recipient_name: str | None = None) -> str:
+    recipient_name = recipient_name or random.choice(config.recipient_names)
     topic = random.choice(period_topics(now.hour))
     shape = random.choice(MESSAGE_SHAPES)
     style = random.choice(STYLE_DIRECTIONS)
@@ -293,17 +297,18 @@ def build_prompt(now: datetime, config: Config) -> str:
     forbidden = ", ".join(random.sample(FORBIDDEN_CLICHES, k=3))
 
     return (
-        f"Сейчас {now:%H:%M}. Адресат: девушка, к ней можно обращаться так: {names}. "
+        f"Сейчас {now:%H:%M}. Адресат: девушка. Обращение, если оно нужно: {recipient_name}. "
         f"Тема: {topic}. "
         f"Форма: {shape}. "
         f"Стиль: {style}. "
         "Напиши на русском языке от мужского лица. "
-        "Выбери только одно обращение из списка или вообще не используй обращение, если так звучит естественнее. "
+        f"Если используешь обращение, напиши его строго так: {recipient_name}. Не изменяй, не переводи и не транслитерируй имя. "
+        "Можно вообще не использовать обращение, если так звучит естественнее. "
         "Сообщение должно быть цельным, теплым и понятным, не набором красивых слов. "
         f"Сердечки: {hearts_count}, только из вариантов ❤️, 💕, 💖, 💗, 💘, 💞. "
         f"Сегодня избегай этих фраз и близких к ним шаблонов: {forbidden}. "
         "Не повторяй структуру типичного пожелания из пяти предложений. "
-        "Не используй хэштеги, списки, кавычки, подписи, другие эмодзи и markdown."
+        "Не используй латинские буквы, хэштеги, списки, кавычки, подписи, другие эмодзи и markdown."
     )
 
 
