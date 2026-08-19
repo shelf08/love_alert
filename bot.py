@@ -15,6 +15,13 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/{method}"
 TELEGRAM_MESSAGE_LIMIT = 4096
 OPENROUTER_ATTEMPTS = 3
+INVALID_MESSAGE_PREFIXES = (
+    "user safety:",
+    "assistant safety:",
+    "safety:",
+    "safe",
+    "unsafe",
+)
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -117,6 +124,14 @@ def normalize_openrouter_content(content: Any) -> str:
     return ""
 
 
+def is_invalid_generated_message(text: str) -> bool:
+    normalized = text.strip().lower()
+    if not normalized:
+        return True
+
+    return any(normalized.startswith(prefix) for prefix in INVALID_MESSAGE_PREFIXES)
+
+
 def generate_message(config: Config) -> str:
     now = datetime.now(config.timezone)
     last_response: dict[str, Any] | None = None
@@ -152,13 +167,13 @@ def generate_message(config: Config) -> str:
         except (KeyError, IndexError, TypeError, AttributeError) as exc:
             raise BotError(f"Unexpected OpenRouter response: {response}") from exc
 
-        if content:
+        if content and not is_invalid_generated_message(content):
             return content[:TELEGRAM_MESSAGE_LIMIT]
 
-        print(f"OpenRouter returned empty content, retry {attempt}/{OPENROUTER_ATTEMPTS}", flush=True)
+        print(f"OpenRouter returned unusable content, retry {attempt}/{OPENROUTER_ATTEMPTS}", flush=True)
         time.sleep(2)
 
-    raise BotError(f"OpenRouter returned empty content after retries: {last_response}")
+    raise BotError(f"OpenRouter returned unusable content after retries: {last_response}")
 
 
 def build_prompt(now: datetime, config: Config) -> str:
