@@ -19,7 +19,27 @@
    - Для группы добавь бота в группу, напиши сообщение в группу и проверь тот же `getUpdates`.
 4. Скопируй `.env.example` в `.env` и заполни значения.
 
-## Запуск локально
+## Запуск через Docker
+
+```bash
+cp .env.example .env
+nano .env
+docker compose up -d --build
+```
+
+Проверить логи:
+
+```bash
+docker compose logs -f
+```
+
+Остановить:
+
+```bash
+docker compose down
+```
+
+## Запуск локально без Docker
 
 ```bash
 python bot.py
@@ -27,7 +47,32 @@ python bot.py
 
 Бот использует только стандартную библиотеку Python, дополнительные пакеты не нужны.
 
-## Запуск на VPS
+## Запуск на VPS через Docker
+
+На сервере нужны Git и Docker с Docker Compose plugin.
+
+```bash
+apt update
+apt install -y git docker.io docker-compose-plugin
+systemctl enable --now docker
+cd /opt
+git clone https://github.com/shelf08/love_alert.git
+cd love_alert
+cp .env.example .env
+nano .env
+docker compose up -d --build
+```
+
+Проверить, что бот работает:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+Docker сам будет поднимать контейнер после перезагрузки VPS благодаря `restart: unless-stopped`.
+
+## Запуск на VPS через systemd без Docker
 
 На сервере нужен Python 3.11+.
 
@@ -39,22 +84,7 @@ nano .env
 python3 bot.py
 ```
 
-Чтобы бот жил после закрытия SSH, удобнее запустить его через `systemd`.
-
-Можно взять шаблон из `deploy/love-alert.service.example`:
-
-```bash
-sudo cp deploy/love-alert.service.example /etc/systemd/system/love-alert.service
-sudo nano /etc/systemd/system/love-alert.service
-```
-
-Если проект лежит не в `/opt/love_alert`, поменяй `WorkingDirectory` и `ExecStart`.
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now love-alert
-sudo systemctl status love-alert
-```
+Для постоянного запуска можно взять шаблон из `deploy/love-alert.service.example`.
 
 ## Переменные окружения
 

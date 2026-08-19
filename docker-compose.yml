@@ -1,0 +1,7 @@
+services:
+  love-alert:
+    build: .
+    container_name: love-alert
+    env_file:
+      - .env
+    restart: unless-stopped
