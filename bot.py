@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -21,6 +22,44 @@ INVALID_MESSAGE_PREFIXES = (
     "safety:",
     "safe",
     "unsafe",
+)
+HEARTS = ("❤️", "💕", "💖", "💗", "💘", "💞")
+DEFAULT_RECIPIENT_NAMES = ("Даша", "Дашуля", "Дарья", "Данечка")
+LOCAL_SHORT_MESSAGES = (
+    "{name}, я тебя люблю {heart}",
+    "{name}, ты мое самое нежное счастье {heart}",
+    "{name}, просто обнимаю тебя мысленно {heart}",
+    "{name}, ты у меня самая любимая {heart}",
+    "{name}, пусть у тебя сейчас станет чуть теплее на душе {heart}",
+    "{name}, я рядом мыслями и очень тебя люблю {heart}",
+    "{name}, ты моя нежность {heart}",
+    "{heart}",
+    "{heart}{heart}",
+)
+MESSAGE_SHAPES = (
+    "одно очень короткое сообщение в 1 предложение",
+    "2 коротких предложения, почти как быстрый поцелуй в переписке",
+    "3 предложения: нежность, маленькое пожелание, признание",
+    "4-5 коротких предложений без длинных оборотов",
+    "одно сообщение в стиле тихой записки",
+    "сообщение как внезапное признание посреди дня",
+)
+STYLE_DIRECTIONS = (
+    "очень простыми словами, без литературности",
+    "чуть игриво и очень ласково",
+    "тихо, бережно и спокойно",
+    "сладко, почти приторно, но не шаблонно",
+    "как будто я только что подумал о ней и сразу написал",
+    "с ощущением теплых объятий",
+    "с маленькой бытовой деталью, но не про ужин каждый раз",
+)
+FORBIDDEN_CLICHES = (
+    "выдохни",
+    "дневная суета",
+    "оставь заботы позади",
+    "пусть ужин будет вкусным",
+    "уютный вечер",
+    "я всегда рядом, даже если не могу обнять",
 )
 
 
@@ -47,6 +86,12 @@ def required_env(name: str) -> str:
     return value
 
 
+def parse_recipient_names() -> tuple[str, ...]:
+    raw_names = os.getenv("RECIPIENT_NAMES", ", ".join(DEFAULT_RECIPIENT_NAMES))
+    names = tuple(name.strip() for name in raw_names.split(",") if name.strip())
+    return names or DEFAULT_RECIPIENT_NAMES
+
+
 @dataclass(frozen=True)
 class Config:
     telegram_bot_token: str
@@ -58,6 +103,8 @@ class Config:
     end_hour: int
     send_on_start: bool
     recipient_names: tuple[str, ...]
+    local_message_chance: float
+    heart_only_chance: float
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -72,11 +119,9 @@ class Config:
             start_hour=int(os.getenv("SEND_START_HOUR", "8")),
             end_hour=int(os.getenv("SEND_END_HOUR", "22")),
             send_on_start=os.getenv("SEND_ON_START", "false").lower() == "true",
-            recipient_names=tuple(
-                name.strip()
-                for name in os.getenv("RECIPIENT_NAMES", "Даша, Дашуля, Дарья, Данечка").split(",")
-                if name.strip()
-            ),
+            recipient_names=parse_recipient_names(),
+            local_message_chance=float(os.getenv("LOCAL_MESSAGE_CHANCE", "0.25")),
+            heart_only_chance=float(os.getenv("HEART_ONLY_CHANCE", "0.08")),
         )
 
 
@@ -136,6 +181,12 @@ def generate_message(config: Config) -> str:
     now = datetime.now(config.timezone)
     last_response: dict[str, Any] | None = None
 
+    if random.random() < config.heart_only_chance:
+        return random.choice((random.choice(HEARTS), random.choice(HEARTS) * 2))
+
+    if random.random() < config.local_message_chance:
+        return build_local_message(config)
+
     for attempt in range(1, OPENROUTER_ATTEMPTS + 1):
         response = post_json(
             OPENROUTER_URL,
@@ -176,41 +227,78 @@ def generate_message(config: Config) -> str:
     raise BotError(f"OpenRouter returned unusable content after retries: {last_response}")
 
 
-def build_prompt(now: datetime, config: Config) -> str:
-    names = ", ".join(config.recipient_names)
+def build_local_message(config: Config) -> str:
+    name = random.choice(config.recipient_names)
+    heart = random.choice(HEARTS)
+    template = random.choice(LOCAL_SHORT_MESSAGES)
+    return template.format(name=name, heart=heart)
 
-    if now.hour == 8:
-        topic = (
-            "Утреннее сообщение: пожелай доброго утра и мягко пожелай хорошего дня. "
-            "Можно добавить, что она любимая, красивая, самая нежная и что я рядом мысленно."
+
+def period_topics(hour: int) -> tuple[str, ...]:
+    if hour == 8:
+        return (
+            "доброе утро, мягкое начало дня, ощущение что она самая любимая",
+            "утренний лучик, нежное пожелание сил и легкости",
+            "короткое сонное признание и пожелание хорошего дня",
+            "пожелание проснуться спокойно и почувствовать себя любимой",
+            "ласковое утро без пафоса, как сообщение сразу после пробуждения",
         )
-    elif 9 <= now.hour <= 17:
-        topic = (
-            "Дневное сообщение: пожелай удачи в работе, легких задач, спокойствия и сил. "
-            "Можно добавить маленькое признание в любви или напоминание, что я ею горжусь."
+
+    if 9 <= hour <= 17:
+        return (
+            "удачи в работе, спокойных задач и маленьких побед",
+            "поддержка в середине рабочего дня и признание, что я ею горжусь",
+            "короткое напоминание, что она умничка и у нее все получится",
+            "пожелание легких звонков, понятных задач и добрых людей рядом",
+            "нежное сообщение без конкретного повода, просто потому что я люблю",
+            "маленькая пауза с любовью посреди рабочего дня",
         )
-    elif 18 <= now.hour <= 21:
-        topic = (
-            "Вечернее сообщение: пожелай хорошего отдыха, выдохнуть после дня, вкусного ужина "
-            "или уютного вечера. Можно добавить очень нежное признание в любви."
+
+    if 18 <= hour <= 21:
+        return (
+            "вечернее тепло после дня, без обязательного упоминания ужина",
+            "пожелание мягкого отдыха и приятных мелочей",
+            "признание в любви вечером, будто я очень соскучился",
+            "ласковое сообщение про то, что она заслужила спокойствие и заботу",
+            "теплая мысль о ней, без советов и без повторяющихся фраз",
+            "что-то сладкое и влюбленное, будто хочется прижать ее к себе",
         )
-    elif now.hour == 22:
-        topic = (
-            "Ночное сообщение: пожелай спокойной ночи, сладких снов и мягко скажи, что она очень любима."
-        )
-    else:
-        topic = (
-            "Нейтральное милое сообщение: скажи что-то нежное, заботливое и влюбленное."
+
+    if hour == 22:
+        return (
+            "спокойной ночи, сладких снов и нежное признание",
+            "короткое ночное сообщение, как поцелуй перед сном",
+            "пожелание уснуть спокойно и почувствовать себя любимой",
+            "очень мягкое сообщение перед сном, без длинных объяснений",
+            "сонное признание в любви и пара сердечек",
         )
 
     return (
+        "внезапные милые слова",
+        "короткое признание в любви",
+        "нежное сообщение без повода",
+    )
+
+
+def build_prompt(now: datetime, config: Config) -> str:
+    names = ", ".join(config.recipient_names)
+    topic = random.choice(period_topics(now.hour))
+    shape = random.choice(MESSAGE_SHAPES)
+    style = random.choice(STYLE_DIRECTIONS)
+    hearts_count = random.choice(("0", "1", "1-2", "2-3"))
+    forbidden = ", ".join(random.sample(FORBIDDEN_CLICHES, k=3))
+
+    return (
         f"Сейчас {now:%H:%M}. Адресат: девушка, к ней можно обращаться так: {names}. "
-        f"{topic} "
+        f"Тема: {topic}. "
+        f"Форма: {shape}. "
+        f"Стиль: {style}. "
         "Напиши на русском языке от мужского лица. "
-        "Выбери только одно обращение из списка и используй его естественно. "
-        "Сделай сообщение очень милым, ласковым и сладким, но живым. "
-        "Объем: 4-6 коротких предложений. "
-        "Добавь 1-3 сердечка, например ❤️, 💕 или 💖. "
+        "Выбери только одно обращение из списка или вообще не используй обращение, если так звучит естественнее. "
+        "Сообщение должно быть цельным, теплым и понятным, не набором красивых слов. "
+        f"Сердечки: {hearts_count}, только из вариантов ❤️, 💕, 💖, 💗, 💘, 💞. "
+        f"Сегодня избегай этих фраз и близких к ним шаблонов: {forbidden}. "
+        "Не повторяй структуру типичного пожелания из пяти предложений. "
         "Не используй хэштеги, списки, кавычки, подписи, другие эмодзи и markdown."
     )
 
