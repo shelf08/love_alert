@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/{method}"
 TELEGRAM_MESSAGE_LIMIT = 4096
+OPENROUTER_ATTEMPTS = 3
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -98,41 +99,66 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None 
         raise BotError(f"Network error while calling {url}: {exc.reason}") from exc
 
 
+def normalize_openrouter_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts).strip()
+
+    return ""
+
+
 def generate_message(config: Config) -> str:
     now = datetime.now(config.timezone)
-    response = post_json(
-        OPENROUTER_URL,
-        {
-            "model": config.openrouter_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Ты пишешь очень милые, нежные и немного слащавые сообщения для Telegram. "
-                        "Тон: заботливый, влюбленный, теплый, без иронии и без канцелярита. "
-                        "Добавляй сердечки естественно, чтобы сообщение выглядело ласковым."
-                    ),
-                },
-                {"role": "user", "content": build_prompt(now, config)},
-            ],
-            "temperature": 0.9,
-            "max_tokens": 260,
-        },
-        headers={
-            "Authorization": f"Bearer {config.openrouter_api_key}",
-            "X-OpenRouter-Title": "Love Alert Telegram Bot",
-        },
-    )
+    last_response: dict[str, Any] | None = None
 
-    try:
-        content = response["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, TypeError) as exc:
-        raise BotError(f"Unexpected OpenRouter response: {response}") from exc
+    for attempt in range(1, OPENROUTER_ATTEMPTS + 1):
+        response = post_json(
+            OPENROUTER_URL,
+            {
+                "model": config.openrouter_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Ты пишешь очень милые, нежные и немного слащавые сообщения для Telegram. "
+                            "Тон: заботливый, влюбленный, теплый, без иронии и без канцелярита. "
+                            "Добавляй сердечки естественно, чтобы сообщение выглядело ласковым."
+                        ),
+                    },
+                    {"role": "user", "content": build_prompt(now, config)},
+                ],
+                "temperature": 0.9,
+                "max_tokens": 260,
+            },
+            headers={
+                "Authorization": f"Bearer {config.openrouter_api_key}",
+                "X-OpenRouter-Title": "Love Alert Telegram Bot",
+            },
+        )
+        last_response = response
 
-    if not content:
-        raise BotError("OpenRouter returned an empty message")
+        try:
+            content = normalize_openrouter_content(response["choices"][0]["message"].get("content"))
+        except (KeyError, IndexError, TypeError, AttributeError) as exc:
+            raise BotError(f"Unexpected OpenRouter response: {response}") from exc
 
-    return content[:TELEGRAM_MESSAGE_LIMIT]
+        if content:
+            return content[:TELEGRAM_MESSAGE_LIMIT]
+
+        print(f"OpenRouter returned empty content, retry {attempt}/{OPENROUTER_ATTEMPTS}", flush=True)
+        time.sleep(2)
+
+    raise BotError(f"OpenRouter returned empty content after retries: {last_response}")
 
 
 def build_prompt(now: datetime, config: Config) -> str:

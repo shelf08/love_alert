@@ -91,7 +91,7 @@ python3 bot.py
 - `TELEGRAM_BOT_TOKEN` - токен Telegram-бота.
 - `TELEGRAM_CHAT_ID` - id чата, куда отправлять сообщения.
 - `OPENROUTER_API_KEY` - ключ OpenRouter.
-- `OPENROUTER_MODEL` - модель OpenRouter, по умолчанию `openai/gpt-4o-mini`.
+- `OPENROUTER_MODEL` - модель OpenRouter, по умолчанию `openai/gpt-4o-mini`. Для бесплатного режима можно поставить `openrouter/free`, но у free-router иногда плавает доступность и качество.
 - `TIMEZONE` - часовой пояс, по умолчанию `Europe/Moscow`.
 - `SEND_START_HOUR` - первый час отправки, по умолчанию `8`.
 - `SEND_END_HOUR` - последний час отправки, по умолчанию `22`.
